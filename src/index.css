@@ -2,12 +2,15 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/inter";
+@import "@fontsource/space-mono/400.css";
+@import "@fontsource/space-mono/700.css";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
     --font-heading: var(--font-sans);
     --font-sans: 'Inter Variable', sans-serif;
+    --font-mono: 'Space Mono', ui-monospace, monospace;
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -81,6 +84,8 @@
     --sidebar-accent-foreground: oklch(0.205 0 0);
     --sidebar-border: oklch(0.922 0 0);
     --sidebar-ring: oklch(0.708 0 0);
+    --hud-accent: oklch(0.68 0.14 195);
+    --hud-accent-glow: oklch(0.72 0.16 195 / 0.5);
 }
 
 .dark {
@@ -115,6 +120,50 @@
     --sidebar-accent-foreground: oklch(0.985 0 0);
     --sidebar-border: oklch(1 0 0 / 10%);
     --sidebar-ring: oklch(0.556 0 0);
+    --hud-accent: oklch(0.78 0.12 195);
+    --hud-accent-glow: oklch(0.78 0.14 195 / 0.45);
+}
+
+.glow-text {
+    text-shadow:
+        0 0 20px var(--hud-accent-glow),
+        0 0 40px color-mix(in oklch, var(--hud-accent-glow) 40%, transparent);
+}
+
+.scanline-overlay {
+    position: relative;
+    isolation: isolate;
+}
+
+.scanline-overlay::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    border-radius: inherit;
+    background: repeating-linear-gradient(
+        180deg,
+        transparent,
+        transparent 2px,
+        oklch(0.2 0.02 250 / 0.04) 2px,
+        oklch(0.2 0.02 250 / 0.04) 3px
+    );
+}
+
+.dark .scanline-overlay::before {
+    background: repeating-linear-gradient(
+        180deg,
+        transparent,
+        transparent 2px,
+        oklch(0.985 0 0 / 0.035) 2px,
+        oklch(0.985 0 0 / 0.035) 3px
+    );
+}
+
+.scanline-overlay > * {
+    position: relative;
+    z-index: 1;
 }
 
 @layer base {
