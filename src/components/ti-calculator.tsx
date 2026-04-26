@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { Flame, Gauge, GitFork, Globe, Leaf, Wind } from "lucide-react"
+import { Flame, Gauge, GitFork, Globe, Leaf, Pause, Play, Wind, X } from "lucide-react"
 
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -104,6 +104,18 @@ export function TiCalculator() {
 
   const [nowMs, setNowMs] = useState(0)
   const [anchor, setAnchor] = useState(() => ({ ti: 0, atMs: 0 }))
+  const [pausedNowMs, setPausedNowMs] = useState<number | null>(null)
+  const paused = pausedNowMs !== null
+
+  const togglePause = () => {
+    if (pausedNowMs !== null) {
+      const pauseDuration = Date.now() - pausedNowMs
+      setAnchor((a) => ({ ...a, atMs: a.atMs + pauseDuration }))
+      setPausedNowMs(null)
+    } else {
+      setPausedNowMs(Date.now())
+    }
+  }
 
   const parsedBase = useMemo(() => {
     const o = parseRateInput(oxygen)
@@ -201,9 +213,12 @@ export function TiCalculator() {
 
     const liveTiActive =
       Number.isFinite(totalRate) && totalRate > 0 && cur.ok
+    // While paused, freeze "now" at the moment the user paused so all derived live
+    // values (liveTi, countdowns, timeline times) stop advancing in lockstep.
+    const effectiveNowMs = pausedNowMs ?? nowMs
     // atMs 0 = before first re-anchor; treat as "now" so elapsed stays 0 until the effect runs.
-    const rateAnchorAtMs = anchor.atMs === 0 ? nowMs : anchor.atMs
-    const elapsedSec = Math.max(0, (nowMs - rateAnchorAtMs) / 1000)
+    const rateAnchorAtMs = anchor.atMs === 0 ? effectiveNowMs : anchor.atMs
+    const elapsedSec = Math.max(0, (effectiveNowMs - rateAnchorAtMs) / 1000)
     // Smooth Ti for the headline display (updates every render tick).
     const liveTi = liveTiActive
       ? anchor.ti + totalRate * elapsedSec
@@ -274,6 +289,7 @@ export function TiCalculator() {
     targetStr,
     nowMs,
     anchor,
+    pausedNowMs,
   ])
 
   const setters = {
@@ -377,18 +393,32 @@ export function TiCalculator() {
                     >
                       Current Ti
                     </Label>
-                    <Input
-                      id="current-ti"
-                      value={currentStr}
-                      onChange={(e) => setCurrentStr(e.target.value)}
-                      placeholder="e.g. 350k or 350 kTi"
-                      aria-invalid={parsed.invalid.current || parsed.invalid.order}
-                      className={cn(
-                        "font-mono text-sm",
-                        (parsed.invalid.current || parsed.invalid.order) &&
-                          "border-destructive ring-destructive/30"
-                      )}
-                    />
+                    <div className="relative">
+                      <Input
+                        id="current-ti"
+                        value={currentStr}
+                        onChange={(e) => setCurrentStr(e.target.value)}
+                        placeholder="e.g. 350k or 350 kTi"
+                        aria-invalid={parsed.invalid.current || parsed.invalid.order}
+                        className={cn(
+                          "font-mono text-sm",
+                          currentStr !== "" && "pr-9",
+                          (parsed.invalid.current || parsed.invalid.order) &&
+                            "border-destructive ring-destructive/30"
+                        )}
+                      />
+                      {currentStr !== "" ? (
+                        <button
+                          type="button"
+                          onClick={() => setCurrentStr("")}
+                          aria-label="Clear current Ti"
+                          title="Clear current"
+                          className="absolute top-1/2 right-2 inline-flex size-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-[var(--hud-accent)]/10 hover:text-[var(--hud-accent)] focus-visible:bg-[var(--hud-accent)]/10 focus-visible:text-[var(--hud-accent)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--hud-accent)]/60"
+                        >
+                          <X className="size-3.5" aria-hidden />
+                        </button>
+                      ) : null}
+                    </div>
                     {parsed.cur.ok ? (
                       <p className="font-mono text-[10px] text-muted-foreground tabular-nums">
                         = {formatTiValue(parsed.cur.value)}
@@ -402,18 +432,32 @@ export function TiCalculator() {
                     >
                       Target Ti
                     </Label>
-                    <Input
-                      id="target-ti"
-                      value={targetStr}
-                      onChange={(e) => setTargetStr(e.target.value)}
-                      placeholder="e.g. 2G or 2 GTi"
-                      aria-invalid={parsed.invalid.target || parsed.invalid.order}
-                      className={cn(
-                        "font-mono text-sm",
-                        (parsed.invalid.target || parsed.invalid.order) &&
-                          "border-destructive ring-destructive/30"
-                      )}
-                    />
+                    <div className="relative">
+                      <Input
+                        id="target-ti"
+                        value={targetStr}
+                        onChange={(e) => setTargetStr(e.target.value)}
+                        placeholder="e.g. 2G or 2 GTi"
+                        aria-invalid={parsed.invalid.target || parsed.invalid.order}
+                        className={cn(
+                          "font-mono text-sm",
+                          targetStr !== "" && "pr-9",
+                          (parsed.invalid.target || parsed.invalid.order) &&
+                            "border-destructive ring-destructive/30"
+                        )}
+                      />
+                      {targetStr !== "" ? (
+                        <button
+                          type="button"
+                          onClick={() => setTargetStr("")}
+                          aria-label="Clear target Ti"
+                          title="Clear target"
+                          className="absolute top-1/2 right-2 inline-flex size-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-[var(--hud-accent)]/10 hover:text-[var(--hud-accent)] focus-visible:bg-[var(--hud-accent)]/10 focus-visible:text-[var(--hud-accent)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--hud-accent)]/60"
+                        >
+                          <X className="size-3.5" aria-hidden />
+                        </button>
+                      ) : null}
+                    </div>
                     {parsed.tgt.ok ? (
                       <p className="font-mono text-[10px] text-muted-foreground tabular-nums">
                         = {formatTiValue(parsed.tgt.value)}
@@ -451,11 +495,31 @@ export function TiCalculator() {
                   <span className="inline-flex items-center justify-center gap-2">
                     Estimated current Ti
                     {parsed.showLiveDot ? (
-                      <span
-                        className="size-1.5 shrink-0 rounded-full bg-[var(--hud-accent)] shadow-[0_0_6px_var(--hud-accent)] animate-pulse"
-                        title="Live"
-                        aria-label="Live estimate"
-                      />
+                      <button
+                        type="button"
+                        onClick={togglePause}
+                        aria-label={
+                          paused ? "Resume live tracking" : "Pause live tracking"
+                        }
+                        aria-pressed={paused}
+                        title={paused ? "Resume live tracking" : "Pause live tracking"}
+                        className={cn(
+                          "inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors",
+                          "hover:bg-[var(--hud-accent)]/15 focus-visible:bg-[var(--hud-accent)]/15 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--hud-accent)]/60"
+                        )}
+                      >
+                        {paused ? (
+                          <Play
+                            className="size-3 text-muted-foreground"
+                            aria-hidden
+                          />
+                        ) : (
+                          <span
+                            className="size-1.5 rounded-full bg-[var(--hud-accent)] shadow-[0_0_6px_var(--hud-accent)] animate-pulse"
+                            aria-hidden
+                          />
+                        )}
+                      </button>
                     ) : null}
                   </span>
                 </p>
@@ -463,7 +527,7 @@ export function TiCalculator() {
                   <p
                     className={cn(
                       "glow-text font-mono text-2xl font-semibold tracking-tight sm:text-3xl tabular-nums",
-                      parsed.showLiveDot
+                      parsed.showLiveDot && !paused
                         ? "text-[var(--hud-accent)]"
                         : "text-muted-foreground"
                     )}
@@ -515,9 +579,14 @@ export function TiCalculator() {
               <>
                 <Separator className="bg-gradient-to-r from-transparent via-border to-transparent" />
                 <div>
-                  <h2 className="mb-3 font-mono text-[10px] tracking-[0.25em] text-muted-foreground uppercase">
-                    Stages you&apos;ll pass
-                  </h2>
+                  <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+                    <h2 className="font-mono text-[10px] tracking-[0.25em] text-muted-foreground uppercase">
+                      Stages you&apos;ll pass
+                    </h2>
+                    <p className="font-mono text-[10px] tracking-wider text-muted-foreground/80 normal-case">
+                      Click a stage to set as target
+                    </p>
+                  </div>
                   <ul className="space-y-2 font-mono text-xs">
                     {parsed.timeline.map((row, i) => {
                       if (row.kind === "reached") {
@@ -541,28 +610,44 @@ export function TiCalculator() {
                           <li
                             key={`u-${row.stage.threshold}-${i}`}
                             className={cn(
-                              "flex flex-wrap items-baseline justify-between gap-2 border-l-2 pl-3",
+                              "border-l-2",
                               row.isTarget
                                 ? "border-[var(--hud-accent)] bg-[var(--hud-accent)]/8 py-1.5"
                                 : "border-border"
                             )}
                           >
-                            <span>
-                              <span className="text-muted-foreground">○</span>{" "}
-                              {row.stage.name}
-                            </span>
-                            <span className="tabular-nums text-muted-foreground">
-                              {formatTiValue(row.stage.threshold)}
-                              {row.isTarget ? (
-                                <span className="ml-2 font-medium text-[var(--hud-accent)]">
-                                  TARGET
-                                </span>
-                              ) : (
-                                <span className="ml-2">
-                                  in {formatDurationLabel(formatDuration(row.seconds))}
-                                </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setTargetStr(formatTiValue(row.stage.threshold))
+                              }
+                              aria-pressed={row.isTarget}
+                              aria-label={`Set target to ${row.stage.name} (${formatTiValue(row.stage.threshold)})`}
+                              title="Set as target"
+                              className={cn(
+                                "group flex w-full flex-wrap items-baseline justify-between gap-2 pl-3 text-left transition-colors cursor-pointer",
+                                "hover:bg-[var(--hud-accent)]/10 focus-visible:bg-[var(--hud-accent)]/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--hud-accent)]/60"
                               )}
-                            </span>
+                            >
+                              <span>
+                                <span className="text-muted-foreground transition-colors group-hover:text-[var(--hud-accent)] group-focus-visible:text-[var(--hud-accent)]">
+                                  ○
+                                </span>{" "}
+                                {row.stage.name}
+                              </span>
+                              <span className="tabular-nums text-muted-foreground">
+                                {formatTiValue(row.stage.threshold)}
+                                {row.isTarget ? (
+                                  <span className="ml-2 font-medium text-[var(--hud-accent)]">
+                                    TARGET
+                                  </span>
+                                ) : (
+                                  <span className="ml-2">
+                                    in {formatDurationLabel(formatDuration(row.seconds))}
+                                  </span>
+                                )}
+                              </span>
+                            </button>
                           </li>
                         )
                       }
