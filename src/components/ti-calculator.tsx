@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { Flame, Gauge, GitFork, Globe, Leaf, Pause, Play, Wind, X } from "lucide-react"
+import { Flame, Gauge, GitFork, Globe, Leaf, Play, Wind, X } from "lucide-react"
 
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
