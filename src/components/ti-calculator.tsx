@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Flame, Gauge, GitFork, Globe, Leaf, Wind } from "lucide-react"
 
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
@@ -102,7 +102,10 @@ export function TiCalculator() {
   const [currentStr, setCurrentStr] = useState("")
   const [targetStr, setTargetStr] = useState("")
 
-  const parsed = useMemo(() => {
+  const [nowMs, setNowMs] = useState(0)
+  const [anchor, setAnchor] = useState(() => ({ ti: 0, atMs: 0 }))
+
+  const parsedBase = useMemo(() => {
     const o = parseRateInput(oxygen)
     const h = parseRateInput(heat)
     const p = parseRateInput(pressure)
@@ -124,9 +127,49 @@ export function TiCalculator() {
     const totalRate =
       ratesOk ? o.value + h.value + p.value + b.value : Number.NaN
 
-    const orderOk = tiOk && tgt.value > cur.value
+    return {
+      o,
+      h,
+      p,
+      b,
+      cur,
+      tgt,
+      ratesOk,
+      tiOk,
+      totalRate,
+    }
+  }, [oxygen, heat, pressure, biomass, currentStr, targetStr])
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setNowMs(Date.now())
+    }, 250)
+    return () => clearInterval(id)
+  }, [])
+
+  // Re-anchor when parsed current Ti, total rate, or planet *numerically* change
+  // (deps are primitives — cosmetic edits to currentStr with the same .value do not re-fire).
+  const reanchorCur = parsedBase.cur.ok ? parsedBase.cur.value : null
+  const reanchorRate =
+    parsedBase.ratesOk && Number.isFinite(parsedBase.totalRate)
+      ? parsedBase.totalRate
+      : null
+
+  useEffect(() => {
+    if (reanchorCur === null || reanchorRate === null) return
+    queueMicrotask(() => {
+      setAnchor({ ti: reanchorCur, atMs: Date.now() })
+    })
+  }, [reanchorCur, reanchorRate, planet])
+
+  const parsed = useMemo(() => {
+    const { o, h, p, b, cur, tgt, ratesOk, tiOk, totalRate } = parsedBase
+
+    const orderOk = cur.ok && tgt.ok && tgt.value > cur.value
     const canCompute =
       ratesOk && tiOk && orderOk && totalRate > 0 && Number.isFinite(totalRate)
+
+    const targetTi = tgt.ok ? tgt.value : 0
 
     const bothTiBlank = currentStr.trim() === "" && targetStr.trim() === ""
     const targetBlank = targetStr.trim() === ""
@@ -156,22 +199,47 @@ export function TiCalculator() {
       order: tiOk && !orderOk,
     }
 
+    const liveTiActive =
+      Number.isFinite(totalRate) && totalRate > 0 && cur.ok
+    // atMs 0 = before first re-anchor; treat as "now" so elapsed stays 0 until the effect runs.
+    const rateAnchorAtMs = anchor.atMs === 0 ? nowMs : anchor.atMs
+    const elapsedSec = Math.max(0, (nowMs - rateAnchorAtMs) / 1000)
+    // Smooth Ti for the headline display (updates every render tick).
+    const liveTi = liveTiActive
+      ? anchor.ti + totalRate * elapsedSec
+      : cur.ok
+        ? cur.value
+        : 0
+    // Whole-second elapsed used for *all* countdowns so every row's seconds
+    // field decrements at the same instant (floor(BASE_i - wholeElapsed) =
+    // floor(BASE_i) - wholeElapsed).
+    const wholeElapsedSec = Math.floor(elapsedSec)
+    const liveTiForCountdowns = liveTiActive
+      ? anchor.ti + totalRate * wholeElapsedSec
+      : cur.ok
+        ? cur.value
+        : 0
+
     let seconds = Number.POSITIVE_INFINITY
     if (canCompute) {
-      seconds = calculateTimeSeconds(cur.value, tgt.value, totalRate)
+      seconds = calculateTimeSeconds(liveTiForCountdowns, targetTi, totalRate)
     }
 
     const duration = formatDuration(seconds)
     const timeline = showAllStagesFromZero
       ? buildAllStagesTimeline(planet, totalRate)
       : showAllStagesFromCurrent
-        ? buildAllStagesTimelineFromCurrent(planet, cur.value, totalRate)
+        ? buildAllStagesTimelineFromCurrent(planet, liveTiForCountdowns, totalRate)
         : canCompute && ratesOk
-          ? buildTimeline(planet, cur.value, tgt.value, totalRate)
+          ? buildTimeline(planet, liveTiForCountdowns, targetTi, totalRate)
           : []
 
-    const remainingFormatted =
-      tiOk && orderOk ? formatTiValue(tgt.value - cur.value) : null
+    const remaining =
+      tiOk && orderOk ? Math.max(0, targetTi - liveTiForCountdowns) : null
+    const remainingFormatted = remaining === null ? null : formatTiValue(remaining)
+
+    const showLiveDot =
+      liveTiActive && anchor.atMs > 0 && Number.isFinite(anchor.ti)
 
     return {
       o,
@@ -180,6 +248,7 @@ export function TiCalculator() {
       b,
       cur,
       tgt,
+      targetTi,
       ratesOk,
       tiOk,
       totalRate,
@@ -190,8 +259,12 @@ export function TiCalculator() {
       duration,
       timeline,
       remainingFormatted,
+      liveTi,
+      liveTiActive,
+      showLiveDot,
     }
   }, [
+    parsedBase,
     planet,
     oxygen,
     heat,
@@ -199,6 +272,8 @@ export function TiCalculator() {
     biomass,
     currentStr,
     targetStr,
+    nowMs,
+    anchor,
   ])
 
   const setters = {
@@ -370,30 +445,70 @@ export function TiCalculator() {
 
             <Separator className="bg-gradient-to-r from-transparent via-[var(--hud-accent)]/25 to-transparent" />
 
-            <div className="text-center">
-              <p className="mb-2 font-mono text-[10px] tracking-[0.35em] text-muted-foreground uppercase">
-                Time to target
-              </p>
-              {parsed.invalid.order && parsed.tiOk ? (
-                <p className="text-sm text-destructive">
-                  Target Ti must be greater than current Ti.
+            <div className="grid grid-cols-1 gap-8 text-center sm:grid-cols-2 sm:gap-6">
+              <div>
+                <p className="mb-2 font-mono text-[10px] tracking-[0.35em] text-muted-foreground uppercase">
+                  <span className="inline-flex items-center justify-center gap-2">
+                    Estimated current Ti
+                    {parsed.showLiveDot ? (
+                      <span
+                        className="size-1.5 shrink-0 rounded-full bg-[var(--hud-accent)] shadow-[0_0_6px_var(--hud-accent)] animate-pulse"
+                        title="Live"
+                        aria-label="Live estimate"
+                      />
+                    ) : null}
+                  </span>
                 </p>
-              ) : parsed.ratesOk && parsed.totalRate <= 0 && parsed.orderOk ? (
-                <p className="font-mono text-sm text-muted-foreground">
-                  Add production (total rate &gt; 0) to estimate time.
+                {parsed.cur.ok ? (
+                  <p
+                    className={cn(
+                      "glow-text font-mono text-2xl font-semibold tracking-tight sm:text-3xl tabular-nums",
+                      parsed.showLiveDot
+                        ? "text-[var(--hud-accent)]"
+                        : "text-muted-foreground"
+                    )}
+                    aria-live="polite"
+                  >
+                    {formatTiValue(parsed.liveTi)}
+                  </p>
+                ) : (
+                  <p className="font-mono text-lg text-muted-foreground tabular-nums">
+                    —
+                  </p>
+                )}
+              </div>
+              <div>
+                <p className="mb-2 font-mono text-[10px] tracking-[0.35em] text-muted-foreground uppercase">
+                  Time to target
                 </p>
-              ) : parsed.canCompute ? (
-                <p
-                  className="glow-text font-mono text-2xl font-semibold tracking-tight text-[var(--hud-accent)] sm:text-3xl tabular-nums"
-                  aria-live="polite"
-                >
-                  {formatDurationLabel(parsed.duration)}
-                </p>
-              ) : (
-                <p className="font-mono text-lg text-muted-foreground tabular-nums">
-                  — — —
-                </p>
-              )}
+                {parsed.invalid.order && parsed.tiOk ? (
+                  <p className="text-sm text-destructive">
+                    Target Ti must be greater than current Ti.
+                  </p>
+                ) : parsed.ratesOk && parsed.totalRate <= 0 && parsed.orderOk ? (
+                  <p className="font-mono text-sm text-muted-foreground">
+                    Add production (total rate &gt; 0) to estimate time.
+                  </p>
+                ) : parsed.canCompute && parsed.seconds > 0 ? (
+                  <p
+                    className="glow-text font-mono text-2xl font-semibold tracking-tight text-[var(--hud-accent)] sm:text-3xl tabular-nums"
+                    aria-live="polite"
+                  >
+                    {formatDurationLabel(parsed.duration)}
+                  </p>
+                ) : parsed.canCompute ? (
+                  <p
+                    className="glow-text font-mono text-2xl font-semibold tracking-tight text-[var(--hud-accent)] sm:text-3xl tabular-nums"
+                    aria-live="polite"
+                  >
+                    Reached
+                  </p>
+                ) : (
+                  <p className="font-mono text-lg text-muted-foreground tabular-nums">
+                    — — —
+                  </p>
+                )}
+              </div>
             </div>
 
             {parsed.timeline.length > 0 ? (
